@@ -1,0 +1,9 @@
+{
+  "short_name": "My Finance App",
+  "name": "My Finance App",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#ffffff",
+  "icons": []
+}
