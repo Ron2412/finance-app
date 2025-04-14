@@ -5,6 +5,7 @@ import App from './pages/App';
 import GetStartedPage from './components/GetStartedPage';
 import UsernamePrompt from './components/UsernamePrompt';
 import './styles/index.css';
+import { Analytics } from '@vercel/analytics/react';
 
 const Root = () => {
   const username = localStorage.getItem('username');
@@ -17,6 +18,7 @@ const Root = () => {
         <Route path="/app" element={<App />} />
         <Route path="*" element={<Navigate to={initialPath} replace />} />
       </Routes>
+      <Analytics />
     </BrowserRouter>
   );
 };
