@@ -9,14 +9,17 @@ import { Analytics } from '@vercel/analytics/react';
 
 const Root = () => {
   const username = localStorage.getItem('username');
-  const initialPath = username ? '/app' : '/';
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<GetStartedPage />} />
+        <Route
+          path="/"
+          element={username ? <Navigate to="/app" replace /> : <GetStartedPage />}
+        />
         <Route path="/username" element={<UsernamePrompt />} />
         <Route path="/app" element={<App />} />
-        <Route path="*" element={<Navigate to={initialPath} replace />} />
+        <Route path="*" element={<Navigate to={username ? "/app" : "/"} replace />} />
       </Routes>
       <Analytics />
     </BrowserRouter>
