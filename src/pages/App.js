@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Doughnut } from "react-chartjs-2";
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
-import { subDays, isWithinInterval, format, startOfMonth, endOfMonth } from "date-fns";
+import { subDays, isWithinInterval, format } from "date-fns";
 import {
   FaPlus,
   FaBell,
@@ -50,7 +50,6 @@ function App() {
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [transactions, setTransactions] = useState([]);
-  const [budgets, setBudgets] = useState({});
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [transactionType, setTransactionType] = useState("expense");
@@ -64,19 +63,19 @@ function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   const [currency, setCurrency] = useState(() => localStorage.getItem("currency") || "USD");
   const [editTransactionId, setEditTransactionId] = useState(null);
+  const [budget, setBudget] = useState(() => Number(localStorage.getItem("budget")) || 0);
   const amountInputRef = useRef(null);
 
   useEffect(() => {
     console.log("Checking localStorage on mount:", {
       username: localStorage.getItem("username"),
       transactions: localStorage.getItem("transactions"),
-      budgets: localStorage.getItem("budgets"),
+      budget: localStorage.getItem("budget"),
     });
     const storedUsername = localStorage.getItem("username");
     if (storedUsername) {
       setUsername(storedUsername);
       loadTransactions();
-      loadBudgets();
     } else {
       navigate("/username");
     }
@@ -105,24 +104,6 @@ function App() {
     }
   };
 
-  const loadBudgets = () => {
-    try {
-      const stored = localStorage.getItem("budgets");
-      console.log("Raw budgets from localStorage:", stored);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setBudgets(parsed || {});
-        console.log("Loaded budgets:", parsed);
-      } else {
-        console.log("No budgets found, initializing empty");
-        setBudgets({});
-      }
-    } catch (err) {
-      console.error("Error loading budgets:", err);
-      setBudgets({});
-    }
-  };
-
   const saveTransactions = (data) => {
     try {
       if (!Array.isArray(data)) {
@@ -139,16 +120,6 @@ function App() {
     }
   };
 
-  const saveBudgets = (data) => {
-    try {
-      const serialized = JSON.stringify(data);
-      localStorage.setItem("budgets", serialized);
-      console.log("Saved budgets:", data);
-    } catch (err) {
-      console.error("Error saving budgets:", err);
-    }
-  };
-
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
@@ -158,20 +129,15 @@ function App() {
   useEffect(() => {
     localStorage.setItem("dateFilter", dateFilter);
     localStorage.setItem("currency", currency);
-    console.log("Saved settings:", { dateFilter, currency });
-  }, [dateFilter, currency]);
+    localStorage.setItem("budget", budget);
+    console.log("Saved settings:", { dateFilter, currency, budget });
+  }, [dateFilter, currency, budget]);
 
   useEffect(() => {
     if (transactions.length > 0) {
       saveTransactions(transactions);
     }
   }, [transactions]);
-
-  useEffect(() => {
-    if (Object.keys(budgets).length > 0) {
-      saveBudgets(budgets);
-    }
-  }, [budgets]);
 
   useEffect(() => {
     if (showAddForm && amountInputRef.current) amountInputRef.current.focus();
@@ -181,10 +147,10 @@ function App() {
     if (window.confirm("Resetting will clear all your data. Are you sure?")) {
       localStorage.removeItem("username");
       localStorage.removeItem("transactions");
-      localStorage.removeItem("budgets");
       localStorage.removeItem("theme");
       localStorage.removeItem("currency");
       localStorage.removeItem("dateFilter");
+      localStorage.removeItem("budget");
       console.log("Cleared localStorage");
       navigate("/");
     }
@@ -193,6 +159,13 @@ function App() {
   const toggleTheme = () => setTheme((prev) => (prev === "light" ? "dark" : "light"));
 
   const handleCurrencyChange = (e) => setCurrency(e.target.value);
+
+  const handleBudgetChange = (e) => {
+    const value = e.target.value;
+    if (value === "" || (Number(value) >= 0 && !isNaN(value))) {
+      setBudget(Number(value) || 0);
+    }
+  };
 
   const validateAmount = (value) => {
     if (!value) return "Amount is required.";
@@ -313,30 +286,28 @@ function App() {
     return transactions;
   };
 
-  const setBudget = (category, amount) => {
-    setBudgets((prev) => {
-      const updated = { ...prev, [category]: Number(amount) || 0 };
-      saveBudgets(updated);
-      return updated;
-    });
-  };
-
-  const getBudgetStatus = (category) => {
-    const budget = budgets[category] || 0;
-    const spent = filterTransactionsByDate("monthly")
-      .filter((t) => t.category.toLowerCase() === category.toLowerCase() && t.amount < 0)
-      .reduce((acc, t) => acc + Math.abs(t.amount), 0);
-    return { budget, spent, remaining: budget - spent };
-  };
-
   const totalIncome = useMemo(() => filterTransactionsByDate(dateFilter).filter((t) => t.amount > 0).reduce((acc, t) => acc + t.amount, 0), [dateFilter, transactions]);
   const totalExpenses = useMemo(() => filterTransactionsByDate(dateFilter).filter((t) => t.amount < 0).reduce((acc, t) => acc + Math.abs(t.amount), 0), [dateFilter, transactions]);
   const sortedRecentTransactions = useMemo(() => filterTransactionsByDate(dateFilter).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5), [dateFilter, transactions]);
+  const budgetRemaining = useMemo(() => budget - totalExpenses, [budget, totalExpenses]);
+  const budgetProgress = useMemo(() => budget > 0 ? Math.min((totalExpenses / budget) * 100, 100) : 0, [budget, totalExpenses]);
 
   const currentCurrencySymbol = currencyOptions.find((c) => c.code === currency)?.symbol || "$";
 
-  const doughnutData = { labels: ["Income", "Expenses"], datasets: [{ data: [totalIncome, totalExpenses], backgroundColor: ["#4caf50", "#ef5350"], borderWidth: 1, cutout: "70%" }] };
-  const doughnutOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } };
+  const doughnutData = {
+    labels: ["Income", "Expenses"],
+    datasets: [{
+      data: [totalIncome, totalExpenses],
+      backgroundColor: ["#4caf50", "#ef5350"],
+      borderWidth: 1,
+      cutout: "70%"
+    }]
+  };
+  const doughnutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } }
+  };
 
   const getCategoryIcon = (category) => categories.find((c) => c.name.toLowerCase() === category?.toLowerCase())?.icon || <FaFileExport />;
   const getCategoryClass = (category) => categories.find((c) => c.name.toLowerCase() === category?.toLowerCase())?.bgClass || "";
@@ -394,49 +365,36 @@ function App() {
               <div className="summary-amount">{currentCurrencySymbol}{totalIncome.toLocaleString()}</div>
               <div className="summary-label expense-label">Spent</div>
               <div className="summary-amount">{currentCurrencySymbol}{totalExpenses.toLocaleString()}</div>
-            </div>
-            <div className="summary-chart"><Doughnut data={doughnutData} options={doughnutOptions} /></div>
-          </div>
-
-          <div className="budget-section">
-            <div className="section-header">
-              <h3 className="section-title">Budgets</h3>
-              <div className="see-all" onClick={() => setActiveTab("profile")} aria-label="Set budgets">
-                Set Budgets <FaChevronRight />
+              <div className="summary-label" style={{ marginTop: '1rem' }}>Budget</div>
+              <div className="summary-amount">{currentCurrencySymbol}{budget.toLocaleString()}</div>
+              <div className="summary-label">Remaining</div>
+              <div className={`summary-amount ${budgetRemaining < 0 ? 'expense' : 'income'}`}>
+                {currentCurrencySymbol}{Math.abs(budgetRemaining).toLocaleString()} {budgetRemaining < 0 ? '(Over)' : ''}
               </div>
             </div>
-            <div className="budget-list">
-              {categories
-                .filter((cat) => cat.id !== "income")
-                .map((category) => {
-                  const { budget, spent, remaining } = getBudgetStatus(category.name);
-                  const progress = budget > 0 ? (spent / budget) * 100 : 0;
-                  return (
-                    <div key={category.id} className="budget-card">
-                      <div className={`budget-icon ${category.bgClass}`}>{category.icon}</div>
-                      <div className="budget-details">
-                        <div className="budget-title">{category.name}</div>
-                        <div className="budget-progress-bar">
-                          <div
-                            className="budget-progress"
-                            style={{
-                              width: `${Math.min(progress, 100)}%`,
-                              background: remaining >= 0 ? "var(--income)" : "var(--expense)",
-                            }}
-                          />
-                        </div>
-                        <div className="budget-info">
-                          <span>{currentCurrencySymbol}{spent.toFixed(2)} spent</span>
-                          <span>
-                            {budget > 0
-                              ? `${currentCurrencySymbol}${remaining.toFixed(2)} of ${currentCurrencySymbol}${budget.toFixed(2)}`
-                              : "No budget set"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+            <div className="summary-chart">
+              <Doughnut data={doughnutData} options={doughnutOptions} />
+              {budget > 0 && (
+                <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+                  <div style={{
+                    width: '100%',
+                    height: '10px',
+                    background: 'var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${budgetProgress}%`,
+                      height: '100%',
+                      background: budgetRemaining < 0 ? 'var(--expense)' : 'var(--primary)',
+                      transition: 'width 0.3s ease'
+                    }} />
+                  </div>
+                  <p style={{ fontSize: 'clamp(0.75rem, 2vw, 0.875rem)', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                    {budgetProgress.toFixed(1)}% of budget used
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -469,7 +427,7 @@ function App() {
                     <button
                       className="edit-btn"
                       onClick={() => editTransaction(transaction)}
-                      aria-label={`Edit transaction ${transaction.description}`}
+                     _mapper-label={`Edit transaction ${transaction.description}`}
                     >
                       <FaEdit />
                     </button>
@@ -501,17 +459,18 @@ function App() {
         </div>
       )}
 
-      {activeTab === "transactions" && (
-        <div className="main-content">
-          <TransactionsPage
-            transactions={transactions}
-            deleteTransaction={deleteTransaction}
-            filterTransactionsByDate={filterTransactionsByDate}
-            currencySymbol={currentCurrencySymbol}
-            getBudgetStatus={getBudgetStatus}
-          />
-        </div>
-      )}
+{activeTab === "transactions" && (
+  <div className="main-content">
+    <TransactionsPage
+      transactions={transactions}
+      deleteTransaction={deleteTransaction}
+      filterTransactionsByDate={filterTransactionsByDate}
+      currencySymbol={currentCurrencySymbol}
+      budget={budget}
+      totalExpenses={totalExpenses}
+    />
+  </div>
+)}
       {activeTab === "export" && (
         <div className="main-content">
           <header className="app-header"><h1 className="greeting-name">Export Transactions</h1></header>
@@ -526,30 +485,6 @@ function App() {
               <FaUser size={40} color="var(--primary-dark)" />
               <div>
                 <h2>{username}</h2>
-              </div>
-            </div>
-            <div className="budget-settings">
-              <h3 className="section-title">Monthly Budgets</h3>
-              <div className="budget-settings-grid">
-                {categories
-                  .filter((cat) => cat.id !== "income")
-                  .map((category) => (
-                    <div key={category.id} className="budget-setting-item">
-                      <label className="budget-setting-label">
-                        {category.icon} {category.name}
-                      </label>
-                      <input
-                        type="number"
-                        className="budget-input"
-                        placeholder={`${currentCurrencySymbol}0.00`}
-                        value={budgets[category.name] || ""}
-                        onChange={(e) => setBudget(category.name, e.target.value)}
-                        min="0"
-                        step="0.01"
-                        aria-label={`Set budget for ${category.name}`}
-                      />
-                    </div>
-                  ))}
               </div>
             </div>
             <div className="profile-settings">
@@ -568,6 +503,19 @@ function App() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="setting-item">
+                <label><FaMoneyBillWave /> Monthly Budget</label>
+                <input
+                  type="number"
+                  value={budget}
+                  onChange={handleBudgetChange}
+                  className="profile-select"
+                  placeholder={`${currentCurrencySymbol}0.00`}
+                  step="0.01"
+                  min="0"
+                  aria-label="Set monthly budget"
+                />
               </div>
               <div className="setting-item">
                 <label>{theme === "light" ? <FaSun /> : <FaMoon />} Theme</label>
@@ -679,7 +627,7 @@ function App() {
             </div>
           </div>
         </div>
-      )}
+  )}
 
       <div className="bottom-nav">
         <div className={`nav-item ${activeTab === "home" ? "active" : ""}`} onClick={() => setActiveTab("home")} aria-label="Home">
