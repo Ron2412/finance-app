@@ -23,6 +23,7 @@ import {
   FaList,
   FaEdit,
   FaSpinner,
+  FaTimes,
 } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import TransactionsPage from '../components/TransactionsPage';
@@ -64,6 +65,7 @@ function App() {
   const [currency, setCurrency] = useState(() => localStorage.getItem("currency") || "USD");
   const [editTransactionId, setEditTransactionId] = useState(null);
   const [budget, setBudget] = useState(() => Number(localStorage.getItem("budget")) || 0);
+  const [notifications, setNotifications] = useState([]);
   const amountInputRef = useRef(null);
 
   useEffect(() => {
@@ -137,7 +139,17 @@ function App() {
     if (transactions.length > 0) {
       saveTransactions(transactions);
     }
-  }, [transactions]);
+    // Check budget thresholds
+    const totalExpenses = transactions.filter((t) => t.amount < 0).reduce((acc, t) => acc + Math.abs(t.amount), 0);
+    if (budget > 0) {
+      const progress = (totalExpenses / budget) * 100;
+      if (progress >= 100 && !notifications.some(n => n.message === "Budget exceeded!")) {
+        setNotifications((prev) => [...prev, { id: Date.now(), message: "Budget exceeded!" }]);
+      } else if (progress >= 80 && !notifications.some(n => n.message === "Warning: 80% of budget used")) {
+        setNotifications((prev) => [...prev, { id: Date.now(), message: "Warning: 80% of budget used" }]);
+      }
+    }
+  }, [transactions, budget]);
 
   useEffect(() => {
     if (showAddForm && amountInputRef.current) amountInputRef.current.focus();
@@ -254,6 +266,10 @@ function App() {
     setError("");
   };
 
+  const dismissNotification = (id) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
   const exportToCSV = () => {
     const currentCurrency = currencyOptions.find((c) => c.code === currency);
     const csvContent = [
@@ -335,6 +351,51 @@ function App() {
           </div>
         </div>
       </nav>
+
+      {notifications.length > 0 && (
+        <div style={{
+          position: 'fixed',
+          top: '1rem',
+          right: '1rem',
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem'
+        }}>
+          {notifications.map((notification) => (
+            <div
+              key={notification.id}
+              style={{
+                background: 'var(--card-bg)',
+                padding: '1rem',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--shadow-md)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '1rem',
+                maxWidth: '300px'
+              }}
+            >
+              <FaBell color="var(--primary-dark)" />
+              <span style={{ fontSize: 'clamp(0.875rem, 2vw, 1rem)', color: 'var(--text-primary)' }}>
+                {notification.message}
+              </span>
+              <button
+                onClick={() => dismissNotification(notification.id)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary)'
+                }}
+                aria-label="Dismiss notification"
+              >
+                <FaTimes />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {activeTab === "home" && (
         <div className="main-content">
@@ -427,7 +488,7 @@ function App() {
                     <button
                       className="edit-btn"
                       onClick={() => editTransaction(transaction)}
-                     _mapper-label={`Edit transaction ${transaction.description}`}
+                      aria-label={`Edit transaction ${transaction.description}`}
                     >
                       <FaEdit />
                     </button>
@@ -459,18 +520,18 @@ function App() {
         </div>
       )}
 
-{activeTab === "transactions" && (
-  <div className="main-content">
-    <TransactionsPage
-      transactions={transactions}
-      deleteTransaction={deleteTransaction}
-      filterTransactionsByDate={filterTransactionsByDate}
-      currencySymbol={currentCurrencySymbol}
-      budget={budget}
-      totalExpenses={totalExpenses}
-    />
-  </div>
-)}
+      {activeTab === "transactions" && (
+        <div className="main-content">
+          <TransactionsPage
+            transactions={transactions}
+            deleteTransaction={deleteTransaction}
+            filterTransactionsByDate={filterTransactionsByDate}
+            currencySymbol={currentCurrencySymbol}
+            budget={budget}
+            totalExpenses={totalExpenses}
+          />
+        </div>
+      )}
       {activeTab === "export" && (
         <div className="main-content">
           <header className="app-header"><h1 className="greeting-name">Export Transactions</h1></header>
@@ -627,7 +688,7 @@ function App() {
             </div>
           </div>
         </div>
-  )}
+      )}
 
       <div className="bottom-nav">
         <div className={`nav-item ${activeTab === "home" ? "active" : ""}`} onClick={() => setActiveTab("home")} aria-label="Home">
